@@ -1,0 +1,372 @@
+prompt_hark_help() {
+cat <<EOF
+An aesthetic prompt with components for user, host, path, git status and jobs
+as well as exit status, completion time and duration of last command. This
+prompt is themeable. You can invoke it thus:
+
+  prompt hark [<theme>]
+
+Supported themes are:
+  * default
+  * catppuccin-mocha
+
+The default theme uses terminal colors, while other themes assume 24-bit true
+color support. Nerd Fonts support is assumed.
+EOF
+}
+
+prompt_hark_setup_colors() {
+  typeset -gA prompt_hark_colors
+  case $1 in
+    default)
+      prompt_hark_colors=(
+        spacer                 '%F{black}'
+        last_exit_status_error '%F{red}'
+        last_jobs              '%F{yellow}'
+        last_exit_time         '%F{black}'
+        last_duration          '%F{black}'
+        info_user              '%F{magenta}'
+        info_host              '%F{magenta}'
+        info_path              '%F{blue}'
+        git_indicator          '%F{black}'
+        git_head               '%F{cyan}'
+        git_action             '%F{yellow}'
+        git_status_index       '%F{green}'
+        git_status_working     '%F{red}'
+        git_status_insertions  '%F{black}'
+        git_status_deletions   '%F{black}'
+        prompt_shlvl           '%F{black}'
+        prompt_normal          '%F{blue}'
+        prompt_insert          '%F{green}'
+        prompt_visual          '%F{magenta}'
+        prompt_replace         '%F{red}'
+      );;
+    catppuccin-mocha)
+      # Background colors achieved by mixing with background color (#1e1e2e) in OkLab by factor of 0.85
+      prompt_hark_colors=(
+        spacer                 '%F{#45475a}'                     # Surface 1
+        last_exit_status_error '%F{#f38ba8}%K{#3a2d3f}'          # Red
+        last_jobs              '%F{#f9e2af}%K{#393841}'          # Yellow
+        last_exit_time         '%F{#45475a}%K{#181825}'          # Surface 1, Mantle
+        last_duration          '%F{#45475a}%K{#181825}'          # Surface 1, Mantle
+        info_user              '%F{#cba6f7}%K{#343048}'          # Mauve
+        info_host              '%F{#cba6f7}%K{#343048}'          # Mauve
+        info_path              '%F{#89b4fa}%K{#2d3249}'          # Blue
+        git_indicator          '%F{#45475a}'                     # Surface 1
+        git_head               '%F{#89dceb}%K{#2d3747}'          # Sapphire
+        git_action             '%F{#fab387}%K{#3a323c}'          # Peach
+        git_status_index       '%F{#a6e3a1}%K{#30383f}'          # Green
+        git_status_working     '%F{#f38ba8}%K{#3a2d3f}'          # Red
+        git_status_insertions  '%F{#a6e3a1}%K{#181825}%{[2m%}' # Green, Mantle, dimmed
+        git_status_deletions   '%F{#f38ba8}%K{#181825}%{[2m%}' # Red, Mantle, dimmed
+        prompt_shlvl           '%F{#45475a}'                     # Surface 1
+        prompt_normal          '%F{#89b4fa}'                     # Blue
+        prompt_insert          '%F{#a6e3a1}'                     # Green
+        prompt_visual          '%F{#cba6f7}'                     # Mauve
+        prompt_replace         '%F{#f38ba8}'                     # Red
+      );;
+    *) echo "Unknown theme: $1" >&2; exit 1;;
+  esac
+}
+
+prompt_hark_setup_icons() {
+  typeset -gA prompt_hark_icons
+
+  prompt_hark_icons=(
+    last_exit_status_code   '󰐤 '
+    last_exit_status_text   '→ '
+    last_jobs_running       ' '
+    last_jobs_suspended     '󱎖 '
+    last_jobs_done          ' '
+    last_exit_time          '󰥔 '
+    last_duration           '󱎫 '
+
+    info_user               ' '
+    info_host               '󰒋 '
+    info_path               '󰉋 '
+
+    git_head_branch         ' '
+    git_head_commit         ' '
+    git_head_tag            ' '
+    git_head_ahead          ''
+    git_head_behind         ''
+    git_action              ' '
+    git_status_index        '󱗜 '
+    git_status_working      '󰐖 '
+    git_status_insertions   '+'
+    git_status_deletions    '-'
+
+    prompt_char             ''
+    prompt_char_cont        '·'
+    prompt_fill             '···'
+  )
+}
+
+prompt_hark_setup_exit_status_text() {
+  typeset -gA prompt_hark_exit_status_text
+
+  prompt_hark_exit_status_text=(
+        1 "Error"
+        2 "Misuse"
+      126 "Cannot execute"
+      127 "Command not found"
+      128 "(invalid argument)"
+      255 "(out of range)"
+  )
+
+  # Exit code 128+N corresponds indicates signal N.
+  # Signals 32-64 are reserved for real-time signals, 
+  # whose boundaries may change dynamically.
+  for number in {1..31}; do
+    local signal=$(builtin kill -l $number)
+    if [[ $number != $signal ]]; then
+      prompt_hark_exit_status_text[$(( 128 + number ))]="SIG$signal"
+    fi
+  done
+}
+
+prompt_hark_get_mode_color() {
+  case $ZVM_MODE in
+    $ZVM_MODE_NORMAL) echo $prompt_hark_colors[prompt_normal];;
+    $ZVM_MODE_INSERT) echo $prompt_hark_colors[prompt_insert];;
+    $ZVM_MODE_VISUAL) echo $prompt_hark_colors[prompt_visual];;
+    $ZVM_MODE_VISUAL_LINE) echo $prompt_hark_colors[prompt_visual];;
+    $ZVM_MODE_REPLACE) echo $prompt_hark_colors[prompt_replace];;
+    *) echo $prompt_hark_colors[prompt_insert];;
+  esac
+}
+
+prompt_hark_get_mode_text() {
+  case $ZVM_MODE in
+    $ZVM_MODE_NORMAL) echo "NORMAL";;
+    $ZVM_MODE_INSERT) echo "INSERT";;
+    $ZVM_MODE_VISUAL) echo "VISUAL";;
+    $ZVM_MODE_VISUAL_LINE) echo "VISUAL LINE";;
+    $ZVM_MODE_REPLACE) echo "REPLACE";;
+  esac
+}
+
+prompt_hark_precmd() {
+  local -i exit_code=$?
+
+  local exit_status_str jobs_str elapsed_str shlvl_prefix_str \
+    git_head_str git_head_ahead_str git_head_behind_str \
+    git_action_str \
+    git_index_str git_index_ins_str git_index_del_str \
+    git_working_str git_working_ins_str git_working_del_str
+
+  # Exit status component
+  exit_status_str=$prompt_hark_exit_status_text[$exit_code]
+  if (( $exit_code >= 160 && $exit_code <= 192 )); then
+    local real_time_signal=$(builtin kill -l $exit_code)
+    if (( real_time_signal != $exit_code )); then
+      exit_status_str="SIG$real_time_signal"
+    fi
+  fi
+
+  # Jobs component
+  local state
+  for state in "running" "suspended" "done"; do
+    local count=${(M)#jobstates:#$state:*}
+    (( count > 0 )) && jobs_str+=$prompt_hark_icons[last_jobs_$state]
+    (( count > 1 )) && jobs_str+="$count "
+  done
+
+  # Elapsed component
+  if (( ${+prompt_hark_start_time} )); then
+    (( prompt_hark_elapsed = int( (EPOCHREALTIME - prompt_hark_start_time) * 1000 ) ))
+    if (( prompt_hark_elapsed < 1 )); then
+      elapsed_str="<1ms"
+    else
+      (( prompt_hark_elapsed > 0 )) && elapsed_str="$(( prompt_hark_elapsed % 1000 ))ms" && (( prompt_hark_elapsed /= 1000 ))
+      (( prompt_hark_elapsed > 0 )) && elapsed_str="$(( prompt_hark_elapsed % 60 ))s$elapsed_str" && (( prompt_hark_elapsed /= 60 ))
+      (( prompt_hark_elapsed > 0 )) && elapsed_str="$(( prompt_hark_elapsed % 60 ))m$elapsed_str" && (( prompt_hark_elapsed /= 60 ))
+      (( prompt_hark_elapsed > 0 )) && elapsed_str="$(( prompt_hark_elapsed % 24 ))h$elapsed_str" && (( prompt_hark_elapsed /= 24 ))
+      (( prompt_hark_elapsed > 0 )) && elapsed_str="$(( prompt_hark_elapsed ))d$elapsed_str"
+    fi
+    unset prompt_hark_start_time prompt_hark_elapsed
+  fi
+
+  # SHLVL prompt prefix
+  if (( SHLVL + PROMPT_HARK_SHLVL_OFFSET > 5 )); then
+    shlvl_prefix_str="$prompt_hark_icons[prompt_char]$prompt_hark_icons[prompt_fill]"
+  elif (( SHLVL + PROMPT_HARK_SHLVL_OFFSET > 1 )); then
+    IFS=$prompt_hark_icons[prompt_char] shlvl_prefix_str=${(l:SHLVL+PROMPT_HARK_SHLVL_OFFSET-1:::)}
+  fi
+
+  ### Git components ###
+
+  # Parse git status
+  typeset -A status_headers status_index_counts status_working_counts 
+  local line IFS=$'\0'
+  for line in $(command git status --branch --show-stash -z --porcelain=v2 2> /dev/null); do
+    local entry=(${(@s: :)line})
+    case $entry[1] in
+      '#')
+        status_headers[$entry[2]]=${(j: :)entry:2}
+        ;;
+      '1'|'2'|'u')
+        [[ ${entry[2]:0:1} != '.' ]] && (( status_index_counts[${entry[2]:0:1}]++ ))
+        [[ ${entry[2]:1:1} != '.' ]] && (( status_working_counts[${entry[2]:1:1}]++ ))
+        ;;
+      '?'|'!')
+        (( status_working_counts[$entry[1]]++ ))
+        ;;
+    esac
+  done
+  local IFS=' '
+
+  # Git head components
+  if [[ $status_headers[branch.head] == '(detached)' ]]; then
+    local git_tag=$(command git tag --points-at $status_headers[branch.oid] 2> /dev/null)
+    if [[ -n $git_tag ]]; then
+      git_head_str="$prompt_hark_icons[git_head_tag]$git_tag"
+    else
+      git_head_str="$prompt_hark_icons[git_head_commit]${status_headers[branch.oid]:0:9}"
+    fi
+  elif (( ${+status_headers[branch.head]} )); then
+    git_head_str="$prompt_hark_icons[git_head_branch]$status_headers[branch.head]"
+  fi
+
+  git_head_ahead_str=${${status_headers[branch.ab][(w)1]:1}:/0/}
+  git_head_behind_str=${${status_headers[branch.ab][(w)2]:1}:/0/}
+
+  # Git action component
+  local git_dir=$(git rev-parse --git-dir 2> /dev/null)
+  if [[ -n "$git_dir" ]]; then
+    if [[ -f "$git_dir/rebase-apply/applying" ]]; then
+      git_action_str="Applying"
+    elif [[ -f "$git_dir/rebase-apply/rebasing" ]]; then
+      git_action_str="Rebasing"
+    elif [[ -d "$git_dir/rebase-apply" ]]; then
+      git_action_str="Applying/Rebasing"
+    elif [[ -d "$git_dir/rebase-merge" ]]; then
+      git_action_str="Rebasing"
+    elif [[ -f "$git_dir/CHERRY_PICK_HEAD" ]]; then
+      git_action_str="Cherry-picking"
+    elif [[ -f "$git_dir/MERGE_HEAD" ]]; then
+      git_action_str="Merging"
+    elif [[ -f "$git_dir/BISECT_LOG" ]]; then
+      git_action_str="Bisecting"
+    elif [[ -f "$git_dir/REVERT_HEAD" ]]; then
+      git_action_str="Reverting"
+    fi
+  fi
+
+  # Git index status component
+  local status_char
+  for status_char in 'M' 'T' 'A' 'D' 'R' 'C' 'U'; do
+    (( ${+status_index_counts[$status_char]} )) && git_index_str+="${git_index_str:+ }$status_index_counts[$status_char]$status_char"
+  done
+
+  # Git working tree status component
+  for status_char in 'M' 'T' 'A' 'D' 'R' 'C' 'U' '?' '!'; do
+    (( ${+status_working_counts[$status_char]} )) && git_working_str+="${git_working_str:+ }$status_working_counts[$status_char]$status_char"
+  done
+
+  # Git index/working tree insertions/deletions components
+  if [[ -n $status_headers[branch.oid] ]]; then
+    local i
+    local diff_index_commit=${status_headers[branch.oid]:/\(initial\)/4b825dc642cb6eb9a060e54bf8d69288fbee4904}
+    local diff_index_output=($(command git diff-index --shortstat --cached $diff_index_commit 2> /dev/null))
+    (( i = ${diff_index_output[(I)ins*]} - 1 )) && [[ $i != -1 ]] && git_index_ins_str=${diff_index_output[$i]:/0/}
+    (( i = ${diff_index_output[(I)del*]} - 1 )) && [[ $i != -1 ]] && git_index_del_str=${diff_index_output[$i]:/0/}
+
+    local diff_files_output=($(command git diff-files --shortstat 2> /dev/null))
+    (( i = ${diff_files_output[(I)ins*]} - 1 )) && [[ $i != -1 ]] && git_working_ins_str=${diff_files_output[$i]:/0/}
+    (( i = ${diff_files_output[(I)del*]} - 1 )) && [[ $i != -1 ]] && git_working_del_str=${diff_files_output[$i]:/0/}
+  fi
+
+  psvar=(
+    "$exit_status_str" "$jobs_str" "$elapsed_str" "$shlvl_prefix_str"
+    "$git_head_str" "$git_head_ahead_str" "$git_head_behind_str"
+    "$git_action_str"
+    "$git_index_str" "$git_index_ins_str" "$git_index_del_str"
+    "$git_working_str" "$git_working_ins_str" "$git_working_del_str"
+  )
+}
+
+prompt_hark_preexec() {
+  (( prompt_hark_start_time = EPOCHREALTIME ))
+}
+
+prompt_hark_setup() {
+  prompt_opts=(percent subst)
+
+  zmodload zsh/parameter
+  zmodload zsh/datetime
+  zmodload zsh/mathfunc
+  zmodload zsh/zutil
+  zmodload zsh/zle
+
+  autoload -Uz add-zsh-hook
+  autoload -Uz vcs_info
+
+  prompt_hark_setup_colors ${1:-'default'}
+  prompt_hark_setup_icons
+  prompt_hark_setup_exit_status_text
+
+  local reset='%{[0m%}'
+  local spacer="$prompt_hark_colors[spacer]🮈$reset"
+
+  local comp_exit_status="%(?:: $prompt_hark_colors[last_exit_status_error]█ $prompt_hark_icons[last_exit_status_code]%?%1(V: $prompt_hark_icons[last_exit_status_text]%1v:) $reset)"
+  local comp_jobs="%2(V: $prompt_hark_colors[last_jobs]█ %2v$reset:)"
+  local comp_time=" $prompt_hark_colors[last_exit_time]█ $prompt_hark_icons[last_exit_time]%D{%X} $reset"
+  local comp_elapsed="%3(V: $prompt_hark_colors[last_duration]█ $prompt_hark_icons[last_duration]%3v $reset:)"
+
+  local line_last_command="$spacer$comp_exit_status$comp_jobs$comp_time$comp_elapsed$prompt_newline"
+
+  local comp_user=" $prompt_hark_colors[info_user]█ $prompt_hark_icons[info_user]%n $reset"
+  local comp_host=" $prompt_hark_colors[info_host]█ $prompt_hark_icons[info_host]%M $reset"
+  local comp_path=" $prompt_hark_colors[info_path]█ $prompt_hark_icons[info_path]%8~ $reset"
+
+  local line_info="$prompt_newline$spacer$comp_user$comp_host$comp_path"
+
+  local subcomp_git_head_ahead="%6(V: $prompt_hark_colors[git_head_ahead]$prompt_hark_icons[git_head_ahead]%6v:)"
+  local subcomp_git_head_behind="%7(V: $prompt_hark_colors[git_head_behind]$prompt_hark_icons[git_head_behind]%7v:)"
+  local comp_git_head="$prompt_hark_colors[git_head]█ %5v$subcomp_git_head_ahead$subcomp_git_head_behind $reset"
+  local comp_git_action="%8(V: $prompt_hark_colors[git_action]█ $prompt_hark_icons[git_action]%8v $reset:)"
+  local subcomp_git_status_index_ins="%10(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%10v :)"
+  local subcomp_git_status_index_del="%11(V:$prompt_hark_colors[git_status_deletions]%10(V:: )$prompt_hark_icons[git_status_deletions]%11v :)"
+  local comp_git_status_index="%9(V: $prompt_hark_colors[git_status_index]█ $prompt_hark_icons[git_status_index]%9v $subcomp_git_status_index_ins$subcomp_git_status_index_del$reset:)"
+  local subcomp_git_status_working_ins="%13(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%13v :)"
+  local subcomp_git_status_working_del="%14(V:$prompt_hark_colors[git_status_deletions]%13(V:: )$prompt_hark_icons[git_status_deletions]%14v :)"
+  local comp_git_status_working="%12(V: $prompt_hark_colors[git_status_working]█ $prompt_hark_icons[git_status_working]%12v $subcomp_git_status_working_ins$subcomp_git_status_working_del$reset:)"
+
+  local meta_git_line_start="$prompt_newline$spacer "
+  local line_git="%5(V:%8(V:$meta_git_line_start:%9(V:$meta_git_line_start:%12(V:$meta_git_line_start: )))$comp_git_head$comp_git_action$comp_git_status_index$comp_git_status_working:)"
+
+  local prompt_shlvl="$prompt_hark_colors[prompt_shlvl]%4v"
+  local prompt_prompt="\$(prompt_hark_get_mode_color)$prompt_hark_icons[prompt_char]"
+
+  local line_prompt="$prompt_newline$spacer $prompt_shlvl$prompt_prompt$reset "
+
+  PROMPT="$line_last_command$line_info$line_git$line_prompt"
+  PROMPT2="$spacer \${psvar[4]//?/ }\$(prompt_hark_get_mode_color)$prompt_hark_icons[prompt_char_cont]$reset "
+
+  local comp_mode="%S\$(prompt_hark_get_mode_color) \$(prompt_hark_get_mode_text) $reset"
+
+  RPROMPT="$comp_mode"
+  RPROMPT2="$comp_mode"
+
+  add-zsh-hook precmd prompt_hark_precmd
+  add-zsh-hook preexec prompt_hark_preexec
+}
+
+prompt_hark_preview() {
+  local theme themes i
+  themes=(catppuccin-mocha)
+
+  if (( ! $#* )); then
+    for (( i = 1; i <= $#themes; i++ )); do
+      theme=$themes[$i]
+      prompt_preview_theme hark $theme
+      print
+    done
+    prompt_preview_theme hark
+  else
+    prompt_preview_theme hark "$@"
+  fi
+}
+
+prompt_hark_setup "$@"
