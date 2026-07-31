@@ -113,16 +113,6 @@ prompt_hark_setup_exit_status_text() {
       128 "(invalid argument)"
       255 "(out of range)"
   )
-
-  # Exit code 128+N corresponds indicates signal N.
-  # Signals 32-64 are reserved for real-time signals, 
-  # whose boundaries may change dynamically.
-  for number in {1..31}; do
-    local signal=$(builtin kill -l $number)
-    if [[ $number != $signal ]]; then
-      prompt_hark_exit_status_text[$(( 128 + number ))]="SIG$signal"
-    fi
-  done
 }
 
 prompt_hark_get_mode_color() {
@@ -149,7 +139,10 @@ prompt_hark_get_mode_text() {
 prompt_hark_precmd() {
   local -i exit_code=$?
 
-  local exit_status_str jobs_str elapsed_str shlvl_prefix_str \
+  local exit_status_str \
+    jobs_str \
+    elapsed_str \
+    shlvl_prefix_str \
     git_head_str git_head_ahead_str git_head_behind_str \
     git_action_str \
     git_index_str git_index_ins_str git_index_del_str \
@@ -157,10 +150,11 @@ prompt_hark_precmd() {
 
   # Exit status component
   exit_status_str=$prompt_hark_exit_status_text[$exit_code]
-  if (( $exit_code >= 160 && $exit_code <= 192 )); then
-    local real_time_signal=$(builtin kill -l $exit_code)
-    if (( real_time_signal != $exit_code )); then
-      exit_status_str="SIG$real_time_signal"
+  if (( $exit_code >= 129 && $exit_code <= 192 )); then
+    # Exit code 128+N corresponds indicates signal N.
+    local signal=$(builtin kill -l $exit_code)
+    if (( signal != $exit_code )); then
+      exit_status_str="SIG$signal"
     fi
   fi
 
@@ -278,7 +272,10 @@ prompt_hark_precmd() {
   fi
 
   psvar=(
-    "$exit_status_str" "$jobs_str" "$elapsed_str" "$shlvl_prefix_str"
+    "$exit_status_str"
+    "$jobs_str"
+    "$elapsed_str"
+    "$shlvl_prefix_str"
     "$git_head_str" "$git_head_ahead_str" "$git_head_behind_str"
     "$git_action_str"
     "$git_index_str" "$git_index_ins_str" "$git_index_del_str"

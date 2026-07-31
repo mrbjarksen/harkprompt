@@ -2,7 +2,7 @@
   description = "An aesthetic component-based prompt for Zsh";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
   };
 
   outputs = { self, nixpkgs, ... }:
