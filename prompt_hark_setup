@@ -182,16 +182,18 @@ prompt_hark_precmd() {
   fi
 
   # SHLVL prompt prefix
+  local IFS
   if (( SHLVL + PROMPT_HARK_SHLVL_OFFSET > 5 )); then
     shlvl_prefix_str="$prompt_hark_icons[prompt_char]$prompt_hark_icons[prompt_fill]"
   elif (( SHLVL + PROMPT_HARK_SHLVL_OFFSET > 1 )); then
-    IFS=$prompt_hark_icons[prompt_char] shlvl_prefix_str=${(l:SHLVL+PROMPT_HARK_SHLVL_OFFSET-1:::)}
+    IFS=$prompt_hark_icons[prompt_char]
+    shlvl_prefix_str=${(l:SHLVL+PROMPT_HARK_SHLVL_OFFSET-1:::)}
   fi
 
   ### Git components ###
 
   # Parse git status
-  typeset -A status_headers status_index_counts status_working_counts 
+  local -A status_headers status_index_counts status_working_counts 
   local line IFS=$'\0'
   for line in $(command git status --branch --show-stash -z --porcelain=v2 2> /dev/null); do
     local entry=(${(@s: :)line})
