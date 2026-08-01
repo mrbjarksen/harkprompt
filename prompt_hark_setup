@@ -141,7 +141,7 @@ prompt_hark_precmd() {
 
   local exit_status_str \
     jobs_str \
-    elapsed_str \
+    time_str elapsed_str \
     shlvl_prefix_str \
     git_head_str git_head_ahead_str git_head_behind_str \
     git_action_str \
@@ -165,6 +165,9 @@ prompt_hark_precmd() {
     (( count > 0 )) && jobs_str+=$prompt_hark_icons[last_jobs_$state]
     (( count > 1 )) && jobs_str+="$count "
   done
+
+  # Time component
+  strftime -s time_str '%X'
 
   # Elapsed component
   if (( ${+prompt_hark_start_time} )); then
@@ -276,7 +279,7 @@ prompt_hark_precmd() {
   psvar=(
     "$exit_status_str"
     "$jobs_str"
-    "$elapsed_str"
+    "$time_str" "$elapsed_str"
     "$shlvl_prefix_str"
     "$git_head_str" "$git_head_ahead_str" "$git_head_behind_str"
     "$git_action_str"
@@ -310,8 +313,8 @@ prompt_hark_setup() {
 
   local comp_exit_status="%(?:: $prompt_hark_colors[last_exit_status_error]█ $prompt_hark_icons[last_exit_status_code]%?%1(V: $prompt_hark_icons[last_exit_status_text]%1v:) $reset)"
   local comp_jobs="%2(V: $prompt_hark_colors[last_jobs]█ %2v$reset:)"
-  local comp_time=" $prompt_hark_colors[last_exit_time]█ $prompt_hark_icons[last_exit_time]%D{%X} $reset"
-  local comp_elapsed="%3(V: $prompt_hark_colors[last_duration]█ $prompt_hark_icons[last_duration]%3v $reset:)"
+  local comp_time=" $prompt_hark_colors[last_exit_time]█ $prompt_hark_icons[last_exit_time]%3v $reset"
+  local comp_elapsed="%4(V: $prompt_hark_colors[last_duration]█ $prompt_hark_icons[last_duration]%4v $reset:)"
 
   local line_last_command="$spacer$comp_exit_status$comp_jobs$comp_time$comp_elapsed$prompt_newline"
 
@@ -321,27 +324,27 @@ prompt_hark_setup() {
 
   local line_info="$prompt_newline$spacer$comp_user$comp_host$comp_path"
 
-  local subcomp_git_head_ahead="%6(V: $prompt_hark_colors[git_head_ahead]$prompt_hark_icons[git_head_ahead]%6v:)"
-  local subcomp_git_head_behind="%7(V: $prompt_hark_colors[git_head_behind]$prompt_hark_icons[git_head_behind]%7v:)"
-  local comp_git_head="$prompt_hark_colors[git_head]█ %5v$subcomp_git_head_ahead$subcomp_git_head_behind $reset"
-  local comp_git_action="%8(V: $prompt_hark_colors[git_action]█ $prompt_hark_icons[git_action]%8v $reset:)"
-  local subcomp_git_status_index_ins="%10(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%10v :)"
-  local subcomp_git_status_index_del="%11(V:$prompt_hark_colors[git_status_deletions]%10(V:: )$prompt_hark_icons[git_status_deletions]%11v :)"
-  local comp_git_status_index="%9(V: $prompt_hark_colors[git_status_index]█ $prompt_hark_icons[git_status_index]%9v $subcomp_git_status_index_ins$subcomp_git_status_index_del$reset:)"
-  local subcomp_git_status_working_ins="%13(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%13v :)"
-  local subcomp_git_status_working_del="%14(V:$prompt_hark_colors[git_status_deletions]%13(V:: )$prompt_hark_icons[git_status_deletions]%14v :)"
-  local comp_git_status_working="%12(V: $prompt_hark_colors[git_status_working]█ $prompt_hark_icons[git_status_working]%12v $subcomp_git_status_working_ins$subcomp_git_status_working_del$reset:)"
+  local subcomp_git_head_ahead="%7(V: $prompt_hark_colors[git_head_ahead]$prompt_hark_icons[git_head_ahead]%7v:)"
+  local subcomp_git_head_behind="%8(V: $prompt_hark_colors[git_head_behind]$prompt_hark_icons[git_head_behind]%8v:)"
+  local comp_git_head="$prompt_hark_colors[git_head]█ %6v$subcomp_git_head_ahead$subcomp_git_head_behind $reset"
+  local comp_git_action="%9(V: $prompt_hark_colors[git_action]█ $prompt_hark_icons[git_action]%9v $reset:)"
+  local subcomp_git_status_index_ins="%11(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%11v :)"
+  local subcomp_git_status_index_del="%12(V:$prompt_hark_colors[git_status_deletions]%11(V:: )$prompt_hark_icons[git_status_deletions]%12v :)"
+  local comp_git_status_index="%10(V: $prompt_hark_colors[git_status_index]█ $prompt_hark_icons[git_status_index]%10v $subcomp_git_status_index_ins$subcomp_git_status_index_del$reset:)"
+  local subcomp_git_status_working_ins="%14(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%14v :)"
+  local subcomp_git_status_working_del="%15(V:$prompt_hark_colors[git_status_deletions]%14(V:: )$prompt_hark_icons[git_status_deletions]%15v :)"
+  local comp_git_status_working="%13(V: $prompt_hark_colors[git_status_working]█ $prompt_hark_icons[git_status_working]%13v $subcomp_git_status_working_ins$subcomp_git_status_working_del$reset:)"
 
   local meta_git_line_start="$prompt_newline$spacer "
-  local line_git="%5(V:%8(V:$meta_git_line_start:%9(V:$meta_git_line_start:%12(V:$meta_git_line_start: )))$comp_git_head$comp_git_action$comp_git_status_index$comp_git_status_working:)"
+  local line_git="%6(V:%9(V:$meta_git_line_start:%10(V:$meta_git_line_start:%13(V:$meta_git_line_start: )))$comp_git_head$comp_git_action$comp_git_status_index$comp_git_status_working:)"
 
-  local prompt_shlvl="$prompt_hark_colors[prompt_shlvl]%4v"
+  local prompt_shlvl="$prompt_hark_colors[prompt_shlvl]%5v"
   local prompt_prompt="\$(prompt_hark_get_mode_color)$prompt_hark_icons[prompt_char]"
 
   local line_prompt="$prompt_newline$spacer $prompt_shlvl$prompt_prompt$reset "
 
   PROMPT="$line_last_command$line_info$line_git$line_prompt"
-  PROMPT2="$spacer \${psvar[4]//?/ }\$(prompt_hark_get_mode_color)$prompt_hark_icons[prompt_char_cont]$reset "
+  PROMPT2="$spacer \${psvar[5]//?/ }\$(prompt_hark_get_mode_color)$prompt_hark_icons[prompt_char_cont]$reset "
 
   local comp_mode="%S\$(prompt_hark_get_mode_color) \$(prompt_hark_get_mode_text) $reset"
 
