@@ -115,25 +115,45 @@ prompt_hark_setup_exit_status_text() {
   )
 }
 
-prompt_hark_get_mode_color() {
-  case $ZVM_MODE in
-    $ZVM_MODE_NORMAL) echo $prompt_hark_colors[prompt_normal];;
-    $ZVM_MODE_INSERT) echo $prompt_hark_colors[prompt_insert];;
-    $ZVM_MODE_VISUAL) echo $prompt_hark_colors[prompt_visual];;
-    $ZVM_MODE_VISUAL_LINE) echo $prompt_hark_colors[prompt_visual];;
-    $ZVM_MODE_REPLACE) echo $prompt_hark_colors[prompt_replace];;
-    *) echo $prompt_hark_colors[prompt_insert];;
-  esac
-}
+prompt_hark_zle_keymap_select() {
+  local prev=$_prompt_hark_mode_text
 
-prompt_hark_get_mode_text() {
-  case $ZVM_MODE in
-    $ZVM_MODE_NORMAL) echo "NORMAL";;
-    $ZVM_MODE_INSERT) echo "INSERT";;
-    $ZVM_MODE_VISUAL) echo "VISUAL";;
-    $ZVM_MODE_VISUAL_LINE) echo "VISUAL LINE";;
-    $ZVM_MODE_REPLACE) echo "REPLACE";;
+  local active_keymap=$KEYMAP
+  [[ $KEYMAP = main ]] && active_keymap=$_prompt_hark_main_keymap
+
+  case $active_keymap in
+    vicmd)
+      case $REGION_ACTIVE in
+        1)
+          _prompt_hark_mode_color=$prompt_hark_colors[prompt_visual]
+          _prompt_hark_mode_text="VISUAL"
+          ;;
+        2)
+          _prompt_hark_mode_color=$prompt_hark_colors[prompt_visual]
+          _prompt_hark_mode_text="VISUAL LINE"
+          ;;
+        *)
+          _prompt_hark_mode_color=$prompt_hark_colors[prompt_normal]
+          _prompt_hark_mode_text="NORMAL"
+          ;;
+      esac
+      ;;
+    viins)
+      if [[ $ZLE_STATE = *overwrite* ]]; then
+        _prompt_hark_mode_color=$prompt_hark_colors[prompt_replace]
+        _prompt_hark_mode_text="REPLACE"
+      else
+        _prompt_hark_mode_color=$prompt_hark_colors[prompt_insert]
+        _prompt_hark_mode_text="INSERT"
+      fi
+      ;;
+    *)
+      _prompt_hark_mode_color=""
+      _prompt_hark_mode_text=""
+      ;;
   esac
+
+  [[ $prev != $_prompt_hark_mode_text ]] && zle reset-prompt
 }
 
 prompt_hark_precmd() {
@@ -293,20 +313,21 @@ prompt_hark_preexec() {
 }
 
 prompt_hark_setup() {
-  prompt_opts=(percent subst)
-
   zmodload zsh/parameter
   zmodload zsh/datetime
   zmodload zsh/mathfunc
   zmodload zsh/zutil
-  zmodload zsh/zle
 
-  autoload -Uz add-zsh-hook
-  autoload -Uz vcs_info
+  autoload -Uz add-zsh-hook add-zle-hook-widget
+
+  prompt_opts=(percent subst)
+
+  prompt_hark_preexec
 
   prompt_hark_setup_colors ${1:-'default'}
   prompt_hark_setup_icons
   prompt_hark_setup_exit_status_text
+  _prompt_hark_main_keymap=${$(bindkey -lL main)[(w)3]}
 
   local reset='%{[0m%}'
   local spacer="$prompt_hark_colors[spacer]🮈$reset"
@@ -339,20 +360,24 @@ prompt_hark_setup() {
   local line_git="%6(V:%9(V:$meta_git_line_start:%10(V:$meta_git_line_start:%13(V:$meta_git_line_start: )))$comp_git_head$comp_git_action$comp_git_status_index$comp_git_status_working:)"
 
   local prompt_shlvl="$prompt_hark_colors[prompt_shlvl]%5v"
-  local prompt_prompt="\$(prompt_hark_get_mode_color)$prompt_hark_icons[prompt_char]"
+  local prompt_prompt="\$_prompt_hark_mode_color$prompt_hark_icons[prompt_char]"
 
   local line_prompt="$prompt_newline$spacer $prompt_shlvl$prompt_prompt$reset "
 
   PROMPT="$line_last_command$line_info$line_git$line_prompt"
-  PROMPT2="$spacer \${psvar[5]//?/ }\$(prompt_hark_get_mode_color)$prompt_hark_icons[prompt_char_cont]$reset "
+  PROMPT2="$spacer \${psvar[5]//?/ }\$_prompt_hark_mode_color$prompt_hark_icons[prompt_char_cont]$reset "
 
-  local comp_mode="%S\$(prompt_hark_get_mode_color) \$(prompt_hark_get_mode_text) $reset"
+  local comp_mode="%S\$_prompt_hark_mode_color \$_prompt_hark_mode_text $reset"
 
   RPROMPT="$comp_mode"
   RPROMPT2="$comp_mode"
 
   add-zsh-hook precmd prompt_hark_precmd
   add-zsh-hook preexec prompt_hark_preexec
+
+  add-zle-hook-widget line-init prompt_hark_zle_keymap_select
+  add-zle-hook-widget keymap-select prompt_hark_zle_keymap_select
+  add-zle-hook-widget line-pre-redraw prompt_hark_zle_keymap_select
 }
 
 prompt_hark_preview() {
