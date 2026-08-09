@@ -28,7 +28,7 @@ prompt_hark_setup_colors() {
         info_user              '%F{magenta}'
         info_host              '%F{magenta}'
         info_path              '%F{blue}'
-        git_indicator          '%F{black}'
+        git_repo               '%F{blue}'
         git_head               '%F{cyan}'
         git_action             '%F{yellow}'
         git_status_index       '%F{green}'
@@ -52,7 +52,7 @@ prompt_hark_setup_colors() {
         info_user              '%F{#cba6f7}%K{#343048}'          # Mauve
         info_host              '%F{#cba6f7}%K{#343048}'          # Mauve
         info_path              '%F{#89b4fa}%K{#2d3249}'          # Blue
-        git_indicator          '%F{#45475a}'                     # Surface 1
+        git_repo               '%F{#b4befe}%K{#323349}'          # Lavendar
         git_head               '%F{#89dceb}%K{#2d3747}'          # Sapphire
         git_action             '%F{#fab387}%K{#3a323c}'          # Peach
         git_status_index       '%F{#a6e3a1}%K{#30383f}'          # Green
@@ -85,6 +85,7 @@ prompt_hark_setup_icons() {
     info_host               '󰒋 '
     info_path               '󰉋 '
 
+    git_repo                '󰊢 '
     git_head_branch         ' '
     git_head_commit         ' '
     git_head_tag            ' '
@@ -154,6 +155,7 @@ prompt_hark_zle_keymap_select() {
   esac
 
   [[ $prev != $_prompt_hark_mode_text ]] && zle reset-prompt
+  zle redisplay
 }
 
 prompt_hark_precmd() {
@@ -163,6 +165,7 @@ prompt_hark_precmd() {
     jobs_str \
     time_str elapsed_str \
     shlvl_prefix_str \
+    git_repo_str \
     git_head_str git_head_ahead_str git_head_behind_str \
     git_action_str \
     git_index_str git_index_ins_str git_index_del_str \
@@ -215,85 +218,91 @@ prompt_hark_precmd() {
 
   ### Git components ###
 
-  # Parse git status
-  local -A status_headers status_index_counts status_working_counts 
-  local line IFS=$'\0'
-  for line in $(command git status --branch --show-stash -z --porcelain=v2 2> /dev/null); do
-    local entry=(${(@s: :)line})
-    case $entry[1] in
-      '#')
-        status_headers[$entry[2]]=${(j: :)entry:2}
-        ;;
-      '1'|'2'|'u')
-        [[ ${entry[2]:0:1} != '.' ]] && (( status_index_counts[${entry[2]:0:1}]++ ))
-        [[ ${entry[2]:1:1} != '.' ]] && (( status_working_counts[${entry[2]:1:1}]++ ))
-        ;;
-      '?'|'!')
-        (( status_working_counts[$entry[1]]++ ))
-        ;;
-    esac
-  done
-  local IFS=' '
+  local toplevel=$(git rev-parse --show-toplevel 2> /dev/null)
+  if [[ -n $toplevel ]]; then
+    # Git repository component
+    git_repo_str=$(basename $toplevel)
 
-  # Git head components
-  if [[ $status_headers[branch.head] == '(detached)' ]]; then
-    local git_tag=$(command git tag --points-at $status_headers[branch.oid] 2> /dev/null)
-    if [[ -n $git_tag ]]; then
-      git_head_str="$prompt_hark_icons[git_head_tag]$git_tag"
-    else
-      git_head_str="$prompt_hark_icons[git_head_commit]${status_headers[branch.oid]:0:9}"
+    # Parse git status
+    local -A status_headers status_index_counts status_working_counts 
+    local line IFS=$'\0'
+    for line in $(command git status --branch --show-stash -z --porcelain=v2 2> /dev/null); do
+      local entry=(${(@s: :)line})
+      case $entry[1] in
+        '#')
+          status_headers[$entry[2]]=${(j: :)entry:2}
+          ;;
+        '1'|'2'|'u')
+          [[ ${entry[2]:0:1} != '.' ]] && (( status_index_counts[${entry[2]:0:1}]++ ))
+          [[ ${entry[2]:1:1} != '.' ]] && (( status_working_counts[${entry[2]:1:1}]++ ))
+          ;;
+        '?'|'!')
+          (( status_working_counts[$entry[1]]++ ))
+          ;;
+      esac
+    done
+    local IFS=' '
+
+    # Git head components
+    if [[ $status_headers[branch.head] == '(detached)' ]]; then
+      local git_tag=$(command git tag --points-at $status_headers[branch.oid] 2> /dev/null)
+      if [[ -n $git_tag ]]; then
+        git_head_str="$prompt_hark_icons[git_head_tag]$git_tag"
+      else
+        git_head_str="$prompt_hark_icons[git_head_commit]${status_headers[branch.oid]:0:9}"
+      fi
+    elif (( ${+status_headers[branch.head]} )); then
+      git_head_str="$prompt_hark_icons[git_head_branch]$status_headers[branch.head]"
     fi
-  elif (( ${+status_headers[branch.head]} )); then
-    git_head_str="$prompt_hark_icons[git_head_branch]$status_headers[branch.head]"
-  fi
 
-  git_head_ahead_str=${${status_headers[branch.ab][(w)1]:1}:/0/}
-  git_head_behind_str=${${status_headers[branch.ab][(w)2]:1}:/0/}
+    git_head_ahead_str=${${status_headers[branch.ab][(w)1]:1}:/0/}
+    git_head_behind_str=${${status_headers[branch.ab][(w)2]:1}:/0/}
 
-  # Git action component
-  local git_dir=$(git rev-parse --git-dir 2> /dev/null)
-  if [[ -n "$git_dir" ]]; then
-    if [[ -f "$git_dir/rebase-apply/applying" ]]; then
-      git_action_str="Applying"
-    elif [[ -f "$git_dir/rebase-apply/rebasing" ]]; then
-      git_action_str="Rebasing"
-    elif [[ -d "$git_dir/rebase-apply" ]]; then
-      git_action_str="Applying/Rebasing"
-    elif [[ -d "$git_dir/rebase-merge" ]]; then
-      git_action_str="Rebasing"
-    elif [[ -f "$git_dir/CHERRY_PICK_HEAD" ]]; then
-      git_action_str="Cherry-picking"
-    elif [[ -f "$git_dir/MERGE_HEAD" ]]; then
-      git_action_str="Merging"
-    elif [[ -f "$git_dir/BISECT_LOG" ]]; then
-      git_action_str="Bisecting"
-    elif [[ -f "$git_dir/REVERT_HEAD" ]]; then
-      git_action_str="Reverting"
+    # Git action component
+    local git_dir=$(git rev-parse --git-dir 2> /dev/null)
+    if [[ -n "$git_dir" ]]; then
+      if [[ -f "$git_dir/rebase-apply/applying" ]]; then
+        git_action_str="Applying"
+      elif [[ -f "$git_dir/rebase-apply/rebasing" ]]; then
+        git_action_str="Rebasing"
+      elif [[ -d "$git_dir/rebase-apply" ]]; then
+        git_action_str="Applying/Rebasing"
+      elif [[ -d "$git_dir/rebase-merge" ]]; then
+        git_action_str="Rebasing"
+      elif [[ -f "$git_dir/CHERRY_PICK_HEAD" ]]; then
+        git_action_str="Cherry-picking"
+      elif [[ -f "$git_dir/MERGE_HEAD" ]]; then
+        git_action_str="Merging"
+      elif [[ -f "$git_dir/BISECT_LOG" ]]; then
+        git_action_str="Bisecting"
+      elif [[ -f "$git_dir/REVERT_HEAD" ]]; then
+        git_action_str="Reverting"
+      fi
     fi
-  fi
 
-  # Git index status component
-  local status_char
-  for status_char in 'M' 'T' 'A' 'D' 'R' 'C' 'U'; do
-    (( ${+status_index_counts[$status_char]} )) && git_index_str+="${git_index_str:+ }$status_index_counts[$status_char]$status_char"
-  done
+    # Git index status component
+    local status_char
+    for status_char in 'M' 'T' 'A' 'D' 'R' 'C' 'U'; do
+      (( ${+status_index_counts[$status_char]} )) && git_index_str+="${git_index_str:+ }$status_index_counts[$status_char]$status_char"
+    done
 
-  # Git working tree status component
-  for status_char in 'M' 'T' 'A' 'D' 'R' 'C' 'U' '?' '!'; do
-    (( ${+status_working_counts[$status_char]} )) && git_working_str+="${git_working_str:+ }$status_working_counts[$status_char]$status_char"
-  done
+    # Git working tree status component
+    for status_char in 'M' 'T' 'A' 'D' 'R' 'C' 'U' '?' '!'; do
+      (( ${+status_working_counts[$status_char]} )) && git_working_str+="${git_working_str:+ }$status_working_counts[$status_char]$status_char"
+    done
 
-  # Git index/working tree insertions/deletions components
-  if [[ -n $status_headers[branch.oid] ]]; then
-    local i
-    local diff_index_commit=${status_headers[branch.oid]:/\(initial\)/4b825dc642cb6eb9a060e54bf8d69288fbee4904}
-    local diff_index_output=($(command git diff-index --shortstat --cached $diff_index_commit 2> /dev/null))
-    (( i = ${diff_index_output[(I)ins*]} - 1 )) && [[ $i != -1 ]] && git_index_ins_str=${diff_index_output[$i]:/0/}
-    (( i = ${diff_index_output[(I)del*]} - 1 )) && [[ $i != -1 ]] && git_index_del_str=${diff_index_output[$i]:/0/}
+    # Git index/working tree insertions/deletions components
+    if [[ -n $status_headers[branch.oid] ]]; then
+      local i
+      local diff_index_commit=${status_headers[branch.oid]:/\(initial\)/4b825dc642cb6eb9a060e54bf8d69288fbee4904}
+      local diff_index_output=($(command git diff-index --shortstat --cached $diff_index_commit 2> /dev/null))
+      (( i = ${diff_index_output[(I)ins*]} - 1 )) && [[ $i != -1 ]] && git_index_ins_str=${diff_index_output[$i]:/0/}
+      (( i = ${diff_index_output[(I)del*]} - 1 )) && [[ $i != -1 ]] && git_index_del_str=${diff_index_output[$i]:/0/}
 
-    local diff_files_output=($(command git diff-files --shortstat 2> /dev/null))
-    (( i = ${diff_files_output[(I)ins*]} - 1 )) && [[ $i != -1 ]] && git_working_ins_str=${diff_files_output[$i]:/0/}
-    (( i = ${diff_files_output[(I)del*]} - 1 )) && [[ $i != -1 ]] && git_working_del_str=${diff_files_output[$i]:/0/}
+      local diff_files_output=($(command git diff-files --shortstat 2> /dev/null))
+      (( i = ${diff_files_output[(I)ins*]} - 1 )) && [[ $i != -1 ]] && git_working_ins_str=${diff_files_output[$i]:/0/}
+      (( i = ${diff_files_output[(I)del*]} - 1 )) && [[ $i != -1 ]] && git_working_del_str=${diff_files_output[$i]:/0/}
+    fi
   fi
 
   psvar=(
@@ -301,6 +310,7 @@ prompt_hark_precmd() {
     "$jobs_str"
     "$time_str" "$elapsed_str"
     "$shlvl_prefix_str"
+    "$git_repo_str"
     "$git_head_str" "$git_head_ahead_str" "$git_head_behind_str"
     "$git_action_str"
     "$git_index_str" "$git_index_ins_str" "$git_index_del_str"
@@ -345,19 +355,20 @@ prompt_hark_setup() {
 
   local line_info="$prompt_newline$spacer$comp_user$comp_host$comp_path"
 
-  local subcomp_git_head_ahead="%7(V: $prompt_hark_colors[git_head_ahead]$prompt_hark_icons[git_head_ahead]%7v:)"
-  local subcomp_git_head_behind="%8(V: $prompt_hark_colors[git_head_behind]$prompt_hark_icons[git_head_behind]%8v:)"
-  local comp_git_head="$prompt_hark_colors[git_head]█ %6v$subcomp_git_head_ahead$subcomp_git_head_behind $reset"
-  local comp_git_action="%9(V: $prompt_hark_colors[git_action]█ $prompt_hark_icons[git_action]%9v $reset:)"
-  local subcomp_git_status_index_ins="%11(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%11v :)"
-  local subcomp_git_status_index_del="%12(V:$prompt_hark_colors[git_status_deletions]%11(V:: )$prompt_hark_icons[git_status_deletions]%12v :)"
-  local comp_git_status_index="%10(V: $prompt_hark_colors[git_status_index]█ $prompt_hark_icons[git_status_index]%10v $subcomp_git_status_index_ins$subcomp_git_status_index_del$reset:)"
-  local subcomp_git_status_working_ins="%14(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%14v :)"
-  local subcomp_git_status_working_del="%15(V:$prompt_hark_colors[git_status_deletions]%14(V:: )$prompt_hark_icons[git_status_deletions]%15v :)"
-  local comp_git_status_working="%13(V: $prompt_hark_colors[git_status_working]█ $prompt_hark_icons[git_status_working]%13v $subcomp_git_status_working_ins$subcomp_git_status_working_del$reset:)"
+  local comp_git_repo="%6(V: $prompt_hark_colors[git_repo]█ $prompt_hark_icons[git_repo]%6v $reset:)"
+  local subcomp_git_head_ahead="%8(V: $prompt_hark_colors[git_head_ahead]$prompt_hark_icons[git_head_ahead]%8v:)"
+  local subcomp_git_head_behind="%9(V: $prompt_hark_colors[git_head_behind]$prompt_hark_icons[git_head_behind]%9v:)"
+  local comp_git_head=" $prompt_hark_colors[git_head]█ %7v$subcomp_git_head_ahead$subcomp_git_head_behind $reset"
+  local comp_git_action="%10(V: $prompt_hark_colors[git_action]█ $prompt_hark_icons[git_action]%10v $reset:)"
+  local subcomp_git_status_index_ins="%12(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%12v :)"
+  local subcomp_git_status_index_del="%13(V:$prompt_hark_colors[git_status_deletions]%12(V:: )$prompt_hark_icons[git_status_deletions]%13v :)"
+  local comp_git_status_index="%11(V: $prompt_hark_colors[git_status_index]█ $prompt_hark_icons[git_status_index]%11v $subcomp_git_status_index_ins$subcomp_git_status_index_del$reset:)"
+  local subcomp_git_status_working_ins="%15(V:$prompt_hark_colors[git_status_insertions] $prompt_hark_icons[git_status_insertions]%15v :)"
+  local subcomp_git_status_working_del="%16(V:$prompt_hark_colors[git_status_deletions]%15(V:: )$prompt_hark_icons[git_status_deletions]%16v :)"
+  local comp_git_status_working="%14(V: $prompt_hark_colors[git_status_working]█ $prompt_hark_icons[git_status_working]%14v $subcomp_git_status_working_ins$subcomp_git_status_working_del$reset:)"
 
   local meta_git_line_start="$prompt_newline$spacer "
-  local line_git="%6(V:%9(V:$meta_git_line_start:%10(V:$meta_git_line_start:%13(V:$meta_git_line_start: )))$comp_git_head$comp_git_action$comp_git_status_index$comp_git_status_working:)"
+  local line_git="%6(V:$prompt_newline$spacer$comp_git_repo$comp_git_head$comp_git_action$comp_git_status_index$comp_git_status_working:)"
 
   local prompt_shlvl=" $prompt_hark_colors[prompt_shlvl]█ %5v$reset"
   local prompt_prompt="\$_prompt_hark_mode_color$prompt_hark_icons[prompt_char]$reset"
