@@ -66,15 +66,16 @@
           };
         };
         config = {
-          programs.zsh.initContent = lib.mkIf config.programs.zsh.harkprompt.enable ''
-            fpath+=(${config.programs.zsh.harkprompt.package}/share/zsh/site-functions)
+          programs.zsh.initContent = lib.mkIf config.programs.zsh.harkprompt.enable
+            (lib.mkOrder 550 ''
+              fpath+=(${config.programs.zsh.harkprompt.package}/share/zsh/site-functions)
 
-            setopt TRANSIENT_RPROMPT
-            PROMPT_HARK_SHLVL_OFFSET=-1
+              setopt TRANSIENT_RPROMPT
+              PROMPT_HARK_SHLVL_OFFSET=-1
 
-            autoload -U promptinit && promptinit
-            prompt hark ${config.programs.zsh.harkprompt.theme}
-          '';
+              autoload -U promptinit && promptinit
+              prompt hark ${config.programs.zsh.harkprompt.theme}
+            '');
         };
       };
     };
