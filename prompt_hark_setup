@@ -359,15 +359,15 @@ prompt_hark_setup() {
   local meta_git_line_start="$prompt_newline$spacer "
   local line_git="%6(V:%9(V:$meta_git_line_start:%10(V:$meta_git_line_start:%13(V:$meta_git_line_start: )))$comp_git_head$comp_git_action$comp_git_status_index$comp_git_status_working:)"
 
-  local prompt_shlvl="$prompt_hark_colors[prompt_shlvl]%5v"
-  local prompt_prompt="\$_prompt_hark_mode_color$prompt_hark_icons[prompt_char]"
+  local prompt_shlvl=" $prompt_hark_colors[prompt_shlvl]█ %5v$reset"
+  local prompt_prompt="\$_prompt_hark_mode_color$prompt_hark_icons[prompt_char]$reset"
 
-  local line_prompt="$prompt_newline$spacer $prompt_shlvl$prompt_prompt$reset "
+  local line_prompt="$prompt_newline$spacer$prompt_shlvl$prompt_prompt "
 
   PROMPT="$line_last_command$line_info$line_git$line_prompt"
   PROMPT2="$spacer \${psvar[5]//?/ }\$_prompt_hark_mode_color$prompt_hark_icons[prompt_char_cont]$reset "
 
-  local comp_mode="%S\$_prompt_hark_mode_color \$_prompt_hark_mode_text $reset"
+  local comp_mode="\$_prompt_hark_mode_color\$_prompt_hark_mode_text$reset"
 
   RPROMPT="$comp_mode"
   RPROMPT2="$comp_mode"
@@ -397,3 +397,5 @@ prompt_hark_preview() {
 }
 
 prompt_hark_setup "$@"
+
+# vim:ft=zsh:sw=2:
