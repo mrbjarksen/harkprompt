@@ -116,8 +116,12 @@ prompt_hark_setup_exit_status_text() {
   )
 }
 
+prompt_hark_zle_line_init() {
+  prompt_hark_zle_keymap_select
+}
+
 prompt_hark_zle_keymap_select() {
-  local prev=$_prompt_hark_mode_text
+  local prev_mode=$_prompt_hark_mode_text
 
   local active_keymap=$KEYMAP
   [[ $KEYMAP = main ]] && active_keymap=$_prompt_hark_main_keymap
@@ -148,14 +152,15 @@ prompt_hark_zle_keymap_select() {
         _prompt_hark_mode_text="INSERT"
       fi
       ;;
-    *)
-      _prompt_hark_mode_color=""
-      _prompt_hark_mode_text=""
-      ;;
   esac
 
-  [[ $prev != $_prompt_hark_mode_text ]] && zle reset-prompt
-  zle redisplay
+  if [[ $prev_mode != $_prompt_hark_mode_text ]]; then
+    zle reset-prompt
+  fi
+}
+
+prompt_hark_zle_line_pre_redraw() {
+  prompt_hark_zle_keymap_select
 }
 
 prompt_hark_precmd() {
@@ -339,7 +344,7 @@ prompt_hark_setup() {
   prompt_hark_setup_exit_status_text
   _prompt_hark_main_keymap=${$(bindkey -lL main)[(w)3]}
 
-  local reset='%{[0m%}'
+  local reset=$'%{\e[m%}%f%k'
   local spacer="$prompt_hark_colors[spacer]🮈$reset"
 
   local comp_exit_status="%(?:: $prompt_hark_colors[last_exit_status_error]█ $prompt_hark_icons[last_exit_status_code]%?%1(V: $prompt_hark_icons[last_exit_status_text]%1v:) $reset)"
@@ -367,7 +372,6 @@ prompt_hark_setup() {
   local subcomp_git_status_working_del="%16(V:$prompt_hark_colors[git_status_deletions]%15(V:: )$prompt_hark_icons[git_status_deletions]%16v :)"
   local comp_git_status_working="%14(V: $prompt_hark_colors[git_status_working]█ $prompt_hark_icons[git_status_working]%14v $subcomp_git_status_working_ins$subcomp_git_status_working_del$reset:)"
 
-  local meta_git_line_start="$prompt_newline$spacer "
   local line_git="%6(V:$prompt_newline$spacer$comp_git_repo$comp_git_head$comp_git_action$comp_git_status_index$comp_git_status_working:)"
 
   local prompt_shlvl=" $prompt_hark_colors[prompt_shlvl]█ %5v$reset"
@@ -386,9 +390,9 @@ prompt_hark_setup() {
   add-zsh-hook precmd prompt_hark_precmd
   add-zsh-hook preexec prompt_hark_preexec
 
-  add-zle-hook-widget line-init prompt_hark_zle_keymap_select
+  add-zle-hook-widget line-init prompt_hark_zle_line_init
   add-zle-hook-widget keymap-select prompt_hark_zle_keymap_select
-  add-zle-hook-widget line-pre-redraw prompt_hark_zle_keymap_select
+  add-zle-hook-widget line-pre-redraw prompt_hark_zle_line_pre_redraw
 }
 
 prompt_hark_preview() {
